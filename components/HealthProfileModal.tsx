@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { User, X, Save, Heart, Activity, Check, Trash2 } from 'lucide-react';
-import { HealthProfile } from '../types';
+import { User, X, Save, Heart, Activity, Check, Trash2, Phone, ShieldAlert, Mail, Stethoscope, Plus } from 'lucide-react';
+import { HealthProfile, EmergencyContact } from '../types';
 
 interface HealthProfileModalProps {
   isOpen: boolean;
@@ -22,6 +22,47 @@ const COMMON_CONDITIONS = [
   'Arthritis'
 ];
 
+const PRESET_CONTACTS: { label: string; contact: EmergencyContact }[] = [
+  {
+    label: '🩺 Primary Doctor',
+    contact: {
+      name: 'Dr. Sarah Jenkins',
+      relationship: 'Primary Care Physician',
+      phone: '+1 (555) 234-5678',
+      email: 'drjenkins@citymed.org',
+      notes: 'Main Clinic: City Medical Group, Suite 400. Patient ID #4829.',
+    },
+  },
+  {
+    label: '🚨 Family Contact',
+    contact: {
+      name: 'Alex Smith',
+      relationship: 'Spouse / Primary Emergency Contact',
+      phone: '+1 (555) 987-6543',
+      email: 'alex.smith@example.com',
+      notes: 'Key holder & emergency healthcare proxy.',
+    },
+  },
+  {
+    label: '🏥 Urgent Care',
+    contact: {
+      name: 'Metro Urgent Care Center',
+      relationship: 'Urgent Care Center Hotline',
+      phone: '+1 (800) 555-2273',
+      notes: 'Open 24/7 on 5th Avenue.',
+    },
+  },
+  {
+    label: '🚑 Emergency (911)',
+    contact: {
+      name: 'Local Emergency Services',
+      relationship: 'Emergency Medical Dispatch',
+      phone: '911',
+      notes: 'Call immediately for life-threatening symptoms.',
+    },
+  },
+];
+
 const HealthProfileModal: React.FC<HealthProfileModalProps> = ({
   isOpen,
   onClose,
@@ -31,6 +72,16 @@ const HealthProfileModal: React.FC<HealthProfileModalProps> = ({
   const [age, setAge] = useState(profile.age || '');
   const [gender, setGender] = useState(profile.gender || '');
   const [conditions, setConditions] = useState(profile.preExistingConditions || '');
+  
+  // Emergency Contact State
+  const [contactName, setContactName] = useState(profile.emergencyContact?.name || '');
+  const [contactRelationship, setContactRelationship] = useState(
+    profile.emergencyContact?.relationship || 'Primary Care Physician'
+  );
+  const [contactPhone, setContactPhone] = useState(profile.emergencyContact?.phone || '');
+  const [contactEmail, setContactEmail] = useState(profile.emergencyContact?.email || '');
+  const [contactNotes, setContactNotes] = useState(profile.emergencyContact?.notes || '');
+
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   useEffect(() => {
@@ -38,19 +89,46 @@ const HealthProfileModal: React.FC<HealthProfileModalProps> = ({
       setAge(profile.age || '');
       setGender(profile.gender || '');
       setConditions(profile.preExistingConditions || '');
+      setContactName(profile.emergencyContact?.name || '');
+      setContactRelationship(profile.emergencyContact?.relationship || 'Primary Care Physician');
+      setContactPhone(profile.emergencyContact?.phone || '');
+      setContactEmail(profile.emergencyContact?.email || '');
+      setContactNotes(profile.emergencyContact?.notes || '');
       setSavedSuccess(false);
     }
   }, [isOpen, profile]);
 
   if (!isOpen) return null;
 
+  const handleApplyPreset = (preset: EmergencyContact) => {
+    setContactName(preset.name);
+    setContactRelationship(preset.relationship);
+    setContactPhone(preset.phone);
+    if (preset.email) setContactEmail(preset.email);
+    if (preset.notes) setContactNotes(preset.notes);
+  };
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+
+    let emergencyContact: EmergencyContact | undefined = undefined;
+    if (contactName.trim() || contactPhone.trim()) {
+      emergencyContact = {
+        name: contactName.trim() || 'Emergency Contact',
+        relationship: contactRelationship.trim() || 'Primary Contact',
+        phone: contactPhone.trim(),
+        email: contactEmail.trim() || undefined,
+        notes: contactNotes.trim() || undefined,
+      };
+    }
+
     const updatedProfile: HealthProfile = {
       age: age.trim(),
       gender: gender.trim(),
       preExistingConditions: conditions.trim(),
+      emergencyContact,
     };
+
     onSaveProfile(updatedProfile);
     setSavedSuccess(true);
     setTimeout(() => {
@@ -79,6 +157,11 @@ const HealthProfileModal: React.FC<HealthProfileModalProps> = ({
     setAge('');
     setGender('');
     setConditions('');
+    setContactName('');
+    setContactRelationship('Primary Care Physician');
+    setContactPhone('');
+    setContactEmail('');
+    setContactNotes('');
     onSaveProfile({});
     setSavedSuccess(true);
     setTimeout(() => {
@@ -206,8 +289,141 @@ const HealthProfileModal: React.FC<HealthProfileModalProps> = ({
             </div>
           </div>
 
+          {/* Emergency Contact & Primary Physician Section */}
+          <div className="bg-rose-50/60 border border-rose-200/80 rounded-2xl p-4 space-y-3.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="bg-rose-600 text-white p-1.5 rounded-lg shadow-2xs">
+                  <Phone size={16} />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                    Emergency Contact & Physician
+                  </h3>
+                  <p className="text-[11px] text-slate-500 font-medium">
+                    Quick-access contact for urgent AI symptom triggers
+                  </p>
+                </div>
+              </div>
+
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-200">
+                {contactName ? 'Configured' : 'Optional'}
+              </span>
+            </div>
+
+            {/* Presets */}
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
+                Quick Presets:
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {PRESET_CONTACTS.map((p) => (
+                  <button
+                    key={p.label}
+                    type="button"
+                    onClick={() => handleApplyPreset(p.contact)}
+                    className="text-xs px-2.5 py-1 bg-white border border-rose-200 hover:border-rose-300 text-slate-700 hover:text-rose-900 rounded-lg font-medium transition-colors shadow-2xs"
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              {/* Contact Name */}
+              <div>
+                <label htmlFor="emergency-contact-name" className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Contact / Doctor Name
+                </label>
+                <input
+                  id="emergency-contact-name"
+                  type="text"
+                  placeholder="e.g., Dr. Sarah Jenkins or Jane Doe"
+                  value={contactName}
+                  onChange={(e) => setContactName(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500 text-xs"
+                />
+              </div>
+
+              {/* Relationship / Role */}
+              <div>
+                <label htmlFor="emergency-contact-role" className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Relationship / Role
+                </label>
+                <select
+                  id="emergency-contact-role"
+                  value={contactRelationship}
+                  onChange={(e) => setContactRelationship(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500 text-xs"
+                >
+                  <option value="Primary Care Physician">Primary Care Physician</option>
+                  <option value="Specialist / Cardiologist">Specialist / Cardiologist</option>
+                  <option value="Spouse / Partner">Spouse / Partner</option>
+                  <option value="Parent / Family Member">Parent / Family Member</option>
+                  <option value="Emergency Caregiver">Emergency Caregiver</option>
+                  <option value="Emergency Dispatch (911)">Emergency Dispatch (911)</option>
+                  <option value="Urgent Care Clinic">Urgent Care Clinic</option>
+                </select>
+              </div>
+
+              {/* Phone Number */}
+              <div>
+                <label htmlFor="emergency-contact-phone" className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center justify-between">
+                  <span>Phone Number</span>
+                  {contactPhone && (
+                    <a
+                      href={`tel:${contactPhone}`}
+                      className="text-rose-700 hover:underline text-[10px] font-bold flex items-center gap-0.5"
+                    >
+                      <Phone size={10} /> Test Tel Link
+                    </a>
+                  )}
+                </label>
+                <input
+                  id="emergency-contact-phone"
+                  type="tel"
+                  placeholder="e.g., +1 (555) 234-5678 or 911"
+                  value={contactPhone}
+                  onChange={(e) => setContactPhone(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500 text-xs font-mono"
+                />
+              </div>
+
+              {/* Email (Optional) */}
+              <div>
+                <label htmlFor="emergency-contact-email" className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Email Address (Optional)
+                </label>
+                <input
+                  id="emergency-contact-email"
+                  type="email"
+                  placeholder="e.g., doctor@clinic.org"
+                  value={contactEmail}
+                  onChange={(e) => setContactEmail(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500 text-xs"
+                />
+              </div>
+            </div>
+
+            {/* Notes / Special Instructions */}
+            <div>
+              <label htmlFor="emergency-contact-notes" className="block text-[11px] font-bold text-slate-700 mb-1">
+                Emergency Notes / Clinical Instructions
+              </label>
+              <input
+                id="emergency-contact-notes"
+                type="text"
+                placeholder="e.g., Patient ID #4829, Medical Proxy, Call if severe headache or chest tightness occurs"
+                value={contactNotes}
+                onChange={(e) => setContactNotes(e.target.value)}
+                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500 text-xs"
+              />
+            </div>
+          </div>
+
           <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 leading-relaxed">
-            <strong>Privacy Note:</strong> This health profile is saved locally in your browser's <code className="bg-amber-100 px-1 py-0.5 rounded">localStorage</code> and attached to AI requests for relevant assessment context.
+            <strong>Privacy Note:</strong> This health profile and emergency contact information are saved locally in your browser's <code className="bg-amber-100 px-1 py-0.5 rounded">localStorage</code> and attached to AI requests for relevant assessment context.
           </div>
 
           {/* Buttons */}

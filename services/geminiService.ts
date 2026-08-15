@@ -1,9 +1,15 @@
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
-import { Message, HealthProfile } from "../types";
+import { Message, HealthProfile, MedicalArticleSearchResult, MedicalArticleSource } from "../types";
 
-// Initialize the client
-// API Key is guaranteed to be in process.env.API_KEY per instructions
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Initialize the client with User-Agent header for telemetry
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY || process.env.API_KEY,
+  httpOptions: {
+    headers: {
+      'User-Agent': 'aistudio-build',
+    },
+  },
+});
 
 const BASE_SYSTEM_INSTRUCTION = `
 You are MediGuide AI, an advanced medical assistant designed to analyze symptoms and visual medical data (like skin conditions).
@@ -93,5 +99,126 @@ export const sendMessageToGemini = async (
   } catch (error) {
     console.error("Error calling Gemini API:", error);
     throw new Error("Failed to analyze symptoms. Please check your connection and try again.");
+  }
+};
+
+export const generateHealthSummary = async (
+  messages: Message[],
+  healthProfile?: HealthProfile
+): Promise<string> => {
+  try {
+    const conversationText = messages
+      .map((m) => `${m.role === 'user' ? 'User' : 'MediGuide AI'}: ${m.content}`)
+      .join('\n\n');
+
+    let profileText = 'No specific health profile specified.';
+    if (healthProfile && (healthProfile.age || healthProfile.gender || healthProfile.preExistingConditions)) {
+      profileText = `Age: ${healthProfile.age || 'N/A'}, Gender: ${healthProfile.gender || 'N/A'}, Pre-existing conditions: ${healthProfile.preExistingConditions || 'None'}`;
+    }
+
+    const prompt = `You are a clinical AI medical assistant summarizer.
+Below is the medical conversation transcript between a user and MediGuide AI, along with the user's health profile.
+
+User Health Profile: ${profileText}
+
+Conversation Transcript:
+${conversationText}
+
+TASK: Synthesize a concise 3-sentence summary of the current session's findings.
+RULES:
+1. Sentence 1 (Chief Symptoms): Summarize the chief symptom(s), onset, or primary health concern reported by the user.
+2. Sentence 2 (Clinical Findings/Causes): Summarize the potential medical causes, observations, or differential diagnoses discussed by MediGuide AI.
+3. Sentence 3 (Recommended Action): Summarize the recommended next steps, care plan, specialist referral, or urgency level.
+4. Output EXACTLY 3 clear, complete sentences. Do NOT use bullet points, numbered lists, markdown formatting, or introductory tags. Start directly with sentence 1.
+5. Keep the language objective, clinical, and clear.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.7-flash',
+      contents: prompt,
+    });
+
+    return (
+      response.text?.trim() ||
+      "The user reported initial symptom concerns for clinical review. MediGuide AI evaluated potential differential causes and recommendations. Further assessment or medical evaluation was advised as needed."
+    );
+  } catch (error) {
+    console.error("Error generating health summary:", error);
+    return "Summary update failed temporarily. Session findings will refresh automatically on the next response.";
+  }
+};
+
+export const searchMedicalArticles = async (
+  query: string,
+  healthProfile?: HealthProfile
+): Promise<MedicalArticleSearchResult> => {
+  try {
+    let profileContext = '';
+    if (healthProfile && (healthProfile.age || healthProfile.gender)) {
+      profileContext = ` (Demographics: Age ${healthProfile.age || 'N/A'}, Biological Sex: ${healthProfile.gender || 'N/A'})`;
+    }
+
+    const prompt = `You are an expert clinical medical educator and healthcare research coordinator.
+Search for verified medical articles, clinical guidelines, and peer-reviewed educational literature from authoritative healthcare institutions (such as Mayo Clinic, NIH/PubMed, CDC, WebMD, Healthline, Cleveland Clinic, Harvard Health Publishing, Johns Hopkins Medicine, WHO, BMJ) regarding the following health topic or symptoms:
+
+Query/Symptoms: "${query}"${profileContext}
+
+CRITICAL TASK:
+1. Search Google for current, high-authority, peer-reviewed or accredited medical articles detailing these symptoms, conditions, or clinical guidelines.
+2. Provide a clear, educational breakdown (3-4 sections) covering:
+   - **Educational Summary & Medical Context**: What current medical literature states regarding these symptoms or condition.
+   - **Potential Underlying Causes & Mechanisms**: Primary physiological or environmental mechanisms.
+   - **Evidence-Based Evaluation & Care Guidelines**: Standard clinical diagnostic steps, self-care measures, or specialist options.
+   - **Red Flags & Warning Signs**: When immediate emergency medical evaluation is necessary.
+3. Write in clear, accessible, professional English using bullet points and markdown headers.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.7-flash',
+      contents: prompt,
+      config: {
+        tools: [{ googleSearch: {} }],
+      },
+    });
+
+    const summaryText =
+      response.text || 'No verified medical literature found for the requested query.';
+
+    // Extract Google Search grounding metadata
+    const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+    const webSearchQueries = response.candidates?.[0]?.groundingMetadata?.webSearchQueries || [];
+
+    const sources: MedicalArticleSource[] = [];
+
+    groundingChunks.forEach((chunk) => {
+      if (chunk.web?.uri && chunk.web?.title) {
+        let domain = '';
+        try {
+          const parsed = new URL(chunk.web.uri);
+          domain = parsed.hostname.replace('www.', '');
+        } catch (e) {
+          domain = 'Medical Institution';
+        }
+
+        // Deduplicate sources by URL
+        if (!sources.some((s) => s.url === chunk.web?.uri)) {
+          sources.push({
+            title: chunk.web.title,
+            url: chunk.web.uri,
+            domain,
+            snippet: (chunk.web as any)?.snippet || undefined,
+          });
+        }
+      }
+    });
+
+    return {
+      query,
+      summary: summaryText,
+      sources,
+      searchQueries: webSearchQueries,
+      timestamp: Date.now(),
+    };
+  } catch (error) {
+    console.error('Error in searchMedicalArticles:', error);
+    throw new Error('Unable to retrieve verified medical articles. Please check your connection and try again.');
   }
 };
