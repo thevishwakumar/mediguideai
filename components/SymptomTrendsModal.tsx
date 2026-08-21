@@ -29,6 +29,9 @@ import {
   ResponsiveContainer,
   AreaChart,
   Area,
+  LineChart,
+  Line,
+  ComposedChart,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -418,6 +421,40 @@ const SymptomTrendsModal: React.FC<SymptomTrendsModalProps> = ({
       };
     });
   }, [filteredLogs]);
+
+  // Last 30 Days specific pain data for line graph
+  const last30DaysPainData = useMemo(() => {
+    const now = new Date();
+    const cutoff = new Date(now.setDate(now.getDate() - 30)).toISOString().slice(0, 10);
+    
+    // Create an array of the last 30 days
+    const daysMap: Record<string, number[]> = {};
+    
+    // Sort all logs by date
+    const sorted = [...logs].sort((a, b) => a.date.localeCompare(b.date));
+    
+    // Filter to last 30 days and group pain levels by date
+    sorted.filter((l) => l.date >= cutoff).forEach(log => {
+      if (!daysMap[log.date]) {
+        daysMap[log.date] = [];
+      }
+      daysMap[log.date].push(log.painLevel);
+    });
+    
+    // Calculate average pain per day if there are multiple logs
+    return Object.entries(daysMap).map(([date, painLevels]) => {
+      const dateFormatted = new Date(date + 'T00:00:00').toLocaleDateString([], {
+        month: 'short',
+        day: 'numeric',
+      });
+      const avgPain = painLevels.reduce((a, b) => a + b, 0) / painLevels.length;
+      
+      return {
+        displayDate: dateFormatted,
+        painLevel: Number(avgPain.toFixed(1))
+      };
+    });
+  }, [logs]);
 
   // Mood & Pain Correlation Stats
   const moodCorrelationStats = useMemo(() => {
@@ -1060,6 +1097,42 @@ Can you analyze the key changes, evaluate whether the pain trajectory shows impr
                     {moodCorrelationStats.summaryText}
                   </p>
                 </div>
+              </div>
+
+              {/* 30-Day Pain Line Graph */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-3 shadow-2xs">
+                <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                  <Activity size={16} className="text-rose-600" />
+                  30-Day Daily Pain Levels Overview
+                </h3>
+                {last30DaysPainData.length === 0 ? (
+                  <div className="text-center py-8 px-4 border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                    <Activity size={24} className="mx-auto text-slate-300 mb-2" />
+                    <p className="text-[11px] font-medium text-slate-500">No pain data recorded in the last 30 days.</p>
+                  </div>
+                ) : (
+                  <div className="h-48 w-full pt-2">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={last30DaysPainData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                        <XAxis dataKey="displayDate" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={{ stroke: '#cbd5e1' }} />
+                        <YAxis domain={[0, 10]} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={{ stroke: '#cbd5e1' }} />
+                        <Tooltip
+                          contentStyle={{ borderRadius: '12px', fontSize: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)' }}
+                          formatter={(value: number) => [`${value} / 10`, 'Average Pain']}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="painLevel"
+                          stroke="#ef4444"
+                          strokeWidth={3}
+                          dot={{ r: 4, fill: '#ef4444', strokeWidth: 2, stroke: '#ffffff' }}
+                          activeDot={{ r: 6 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
               </div>
 
               {/* MAIN RECHARTS TREND LINE CHART */}
